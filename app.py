@@ -77,8 +77,7 @@ else:
             f"Month {i} paydowns (#)", value=0, min_value=0, step=1, key=f"pd_num_{i}"
         ) * st.sidebar.number_input(
             f"Month {i} paydown amount", value=0, step=1_000, key=f"pd_amt_{i}"
-        )
-        for i in range(1, term_months+1)
+        ) for i in range(1, term_months+1)
     ]
 
 # Derived values
@@ -123,20 +122,22 @@ with pd.ExcelWriter(output, engine="xlsxwriter",
     ws = wb.add_worksheet("Schedule")
     writer.sheets["Schedule"] = ws
 
+    # Formats
     money_fmt = wb.add_format({"num_format": "$#,##0"})
     date_fmt = wb.add_format({"num_format": "yyyy-mm-dd"})
+    pct_fmt = wb.add_format({"num_format": "0.00%"})
 
     # Inline summary
-    ws.write(0, 0, "Annual Rate (%)")
-    ws.write_number(0, 1, annual_rate * 100)
+    ws.write(0, 0, "Annual Rate")
+    ws.write_number(0, 1, annual_rate, pct_fmt)
     ws.write(1, 0, "Monthly Rate (=B1/12)")
-    ws.write_formula(1, 1, "=B1/12", money_fmt)
+    ws.write_formula(1, 1, "=B1/12", pct_fmt)
     ws.write(2, 0, "Term (months)")
     ws.write_number(2, 1, term_months)
     ws.write(3, 0, "Settlements per month")
     ws.write_number(3, 1, paydowns_per_month)
     ws.write(4, 0, "Amount per settlement")
-    ws.write_number(4, 1, paydown_amount)
+    ws.write_number(4, 1, paydown_amount, money_fmt)
 
     # Header
     header_row = 6
@@ -158,7 +159,6 @@ with pd.ExcelWriter(output, engine="xlsxwriter",
         ws.write_number(row_idx, 3, r["Const. Draw"], money_fmt)
         ws.write_formula(row_idx, 4, f"=C{excel_row}*$B$2", money_fmt)
         ws.write_formula(row_idx, 5, f"=D{excel_row}+E{excel_row}", money_fmt)
-        # Paydown: link to summary = B4*B5 if fixed
         if paydown_mode == "Fixed paydown amount":
             ws.write_formula(row_idx, 6, "=$B$4*$B$5", money_fmt)
         else:
@@ -176,7 +176,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter",
 output.seek(0)
 
 # ─── Streamlit UI ────────────────────────────────────────
-st.title("🔨 Loan Amortization & Draw Schedule with Extended Summary and Linked Paydown")
+st.title("🔨 Loan Amortization & Draw Schedule with Correct Percent Formatting")
 st.download_button(
     label="📥 Download schedule as Excel (.xlsx)",
     data=output.read(),
