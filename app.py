@@ -35,7 +35,7 @@ st.sidebar.markdown(f"**Paydown start (month-end):** {paydown_start.strftime('%Y
 # Interest handling mode
 interest_mode = st.sidebar.radio(
     "Interest treatment",
-    ("Capitalize interest into loan", "Pay interest out of cash")
+    ("Pay interest out of principal", "Pay interest out of cash")
 )
 
 # Construction draw mode
@@ -98,7 +98,7 @@ for i in range(n_payments):
     # draw
     draw_amt = monthly_draw if draw_mode == "Fixed amount" else custom_draws[i]
     # total draw depends on interest handling
-    if interest_mode == "Capitalize interest into loan":
+    if interest_mode == "Pay interest out of principal":
         total_draw = draw_amt + interest
     else:
         total_draw = draw_amt
@@ -152,7 +152,6 @@ with pd.ExcelWriter(output, engine="xlsxwriter",
     ws.write_number(4, 1, paydowns_per_month)
     ws.write(5, 0, "Amount/settlement", text_fmt)
     ws.write_number(5, 1, paydown_amount, money_fmt)
-    # leave row 6 blank
 
     # Header row at 7
     header_row = 7
@@ -172,22 +171,18 @@ with pd.ExcelWriter(output, engine="xlsxwriter",
         else:
             ws.write_formula(row_idx, 2, f"=H{excel_row-1}", money_fmt)
         ws.write_number(row_idx, 3, r["Const. Draw"], money_fmt)
-        # Interest draw linking to monthly rate
         ws.write_formula(row_idx, 4, f"=C{excel_row}*$B$2", money_fmt)
-        # Total draw formula depending on interest handling
-        if interest_mode == "Capitalize interest into loan":
+        if interest_mode == "Pay interest out of principal":
             ws.write_formula(row_idx, 5, f"=D{excel_row}+E{excel_row}", money_fmt)
         else:
             ws.write_formula(row_idx, 5, f"=D{excel_row}", money_fmt)
-        # Paydown linking to B5 and B6 for fixed, else number
         if paydown_mode == "Fixed paydown amount":
             ws.write_formula(row_idx, 6, "=$B$5*$B$6", money_fmt)
         else:
             ws.write_number(row_idx, 6, r["Paydown"], money_fmt)
-        # End balance
         ws.write_formula(row_idx, 7, f"=C{excel_row}+F{excel_row}-G{excel_row}", money_fmt)
 
-    # Total interest sum below data
+    # Total interest sum
     sum_row = header_row + 1 + n_payments
     start_data = header_row + 2
     end_data = header_row + 1 + n_payments
