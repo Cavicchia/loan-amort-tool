@@ -18,6 +18,24 @@ term_months = st.sidebar.number_input(
     "Term (months)", value=36, min_value=1, max_value=600, step=1, format="%d"
 )
 
+# Date picker anchored to true month-end for draw start
+base = st.sidebar.date_input(
+    "Pick any date in first draw month", value=datetime.today()
+)
+start_date = pd.to_datetime(base) + MonthEnd(0)
+st.sidebar.markdown(
+    f"**Draw start (month-end):** {start_date.strftime('%Y-%m-%d')}"
+)
+
+# Paydown start date
+paydown_base = st.sidebar.date_input(
+    "Pick any date for first paydown month", value=start_date
+)
+paydown_start = pd.to_datetime(paydown_base) + MonthEnd(0)
+st.sidebar.markdown(
+    f"**Paydown start (month-end):** {paydown_start.strftime('%Y-%m-%d')}"
+)
+
 # Draw mode selection
 draw_mode = st.sidebar.radio(
     "Construction draw type",
@@ -41,9 +59,9 @@ else:
 # Paydown mode selection
 paydown_mode = st.sidebar.radio(
     "Paydown type",
-    ("Fixed paydown", "Custom per month")
+    ("Fixed paydown amount", "Custom per month")
 )
-if paydown_mode == "Fixed paydown":
+if paydown_mode == "Fixed paydown amount":
     paydowns_per_month = st.sidebar.number_input(
         "Number of paydowns per month", value=3, min_value=0, step=1, format="%d"
     )
@@ -73,22 +91,23 @@ balance = principal
 
 for i in range(n_payments):
     period = i + 1
+    date_dt = (start_date + MonthEnd(period)).to_pydatetime()
     interest = balance * monthly_rate
-    draw_amt = (monthly_draw if draw_mode == "Fixed amount" else custom_draws[i])
+    draw_amt = monthly_draw if draw_mode == "Fixed amount" else custom_draws[i]
     total_draw = draw_amt + interest
-    if paydown_mode == "Fixed paydown":
-        paydown = paydowns_per_month * paydown_amount
+    # Determine paydown based on start date
+    if date_dt < paydown_start:
+        paydown = 0
     else:
-        paydown = custom_paydowns[i]
+        if paydown_mode == "Fixed paydown amount":
+            paydown = paydowns_per_month * paydown_amount
+        else:
+            paydown = custom_paydowns[i]
     end_bal = balance + total_draw - paydown
-    date_dt = (pd.to_datetime(datetime.today()) + MonthEnd(period)).to_pydatetime() if False else (pd.to_datetime(datetime.today()) + MonthEnd(period)).to_pydatetime()
-    # Use start_date for true month-end
-    start_date = pd.to_datetime(datetime.today()) + MonthEnd(0)
-    date_dt = start_date + MonthEnd(period)
 
     rows.append({
         "Period": period,
-        "Date": date_dt.to_pydatetime(),
+        "Date": date_dt,
         "Beg Balance": balance,
         "Const. Draw": draw_amt,
         "Interest Draw": interest,
@@ -109,19 +128,17 @@ with pd.ExcelWriter(
     writer.sheets["Schedule"] = ws
 
     money_fmt = wb.add_format({"num_format": "$#,##0"})
-    pct_fmt = wb.add_format({"num_format": "0.00%"})
     date_fmt = wb.add_format({"num_format": "yyyy-mm-dd"})
 
     # Inline summary at top
-    ws.write(0, 0, "Annual Rate")
-    ws.write_number(0, 1, annual_rate, pct_fmt)
-    ws.write(1, 0, "Monthly Rate")
-    # Link monthly rate to annual rate / 12
-    ws.write_formula(1, 1, "=B1/12", pct_fmt)
+    ws.write(0, 0, "Annual Rate (%)")
+    ws.write_number(0, 1, annual_rate * 100)
+    ws.write(1, 0, "Monthly Rate (=B1/12)")
+    ws.write_formula(1, 1, "=B1/12", money_fmt)
     ws.write(2, 0, "Term (months)")
-    ws.write_number(2, 1, term_months, money_fmt)
+    ws.write_number(2, 1, term_months)
 
-    # Leave row 3 blank
+    # Header row after summary
     header_row = 4
     headers = [
         "Period", "Date", "Beg Balance", "Const. Draw",
@@ -130,7 +147,7 @@ with pd.ExcelWriter(
     for col, h in enumerate(headers):
         ws.write(header_row, col, h)
 
-    # Data rows
+    # Write data rows with formulas
     for idx, r in enumerate(rows):
         row_idx = header_row + 1 + idx
         excel_row = row_idx + 1
@@ -141,28 +158,23 @@ with pd.ExcelWriter(
         else:
             ws.write_formula(row_idx, 2, f"=H{excel_row-1}", money_fmt)
         ws.write_number(row_idx, 3, r["Const. Draw"], money_fmt)
-        # Now link interest draw to monthly rate cell B2
         ws.write_formula(row_idx, 4, f"=C{excel_row}*$B$2", money_fmt)
         ws.write_formula(row_idx, 5, f"=D{excel_row}+E{excel_row}", money_fmt)
         ws.write_number(row_idx, 6, r["Paydown"], money_fmt)
         ws.write_formula(row_idx, 7, f"=C{excel_row}+F{excel_row}-G{excel_row}", money_fmt)
 
-    # Total interest sum below data
-    sum_row_idx = header_row + 1 + n_payments
-    start_excel = header_row + 2
-    end_excel = header_row + 1 + n_payments
-    ws.write(sum_row_idx, 3, "Total Interest:")
-    ws.write_formula(
-        sum_row_idx, 4,
-        f"=SUM(E{start_excel}:E{end_excel})",
-        money_fmt
-    )
+    # Sum total interest below data
+    sum_row = header_row + 1 + n_payments
+    start_data_row = header_row + 2
+    end_data_row = header_row + 1 + n_payments
+    ws.write(sum_row, 3, "Total Interest:")
+    ws.write_formula(sum_row, 4, f"=SUM(E{start_data_row}:E{end_data_row})", money_fmt)
 
 # Flush buffer
 output.seek(0)
 
 # ─── Streamlit UI ────────────────────────────────────────
-st.title("🔨 Loan Amortization & Draw Schedule with Inline Formulas")
+st.title("🔨 Loan Amortization & Draw Schedule with Inline Formula Summary")
 st.download_button(
     label="📥 Download schedule as Excel (.xlsx)",
     data=output.read(),
