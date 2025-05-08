@@ -18,7 +18,7 @@ term_months = st.sidebar.number_input(
     "Term (months)", value=36, min_value=1, max_value=600, step=1, format="%d"
 )
 
-# Date picker anchored to true month-end for draw start
+# Draw start date
 base = st.sidebar.date_input(
     "Pick any date in first draw month", value=datetime.today()
 )
@@ -66,7 +66,7 @@ if paydown_mode == "Fixed paydown amount":
         "Number of paydowns per month", value=3, min_value=0, step=1, format="%d"
     )
     paydown_amount = st.sidebar.number_input(
-        "Paydown amount per paydown", value=50_000, step=5_000, format="%d"
+        "Paydown amount per settlement", value=50_000, step=5_000, format="%d"
     )
     custom_paydowns = None
 else:
@@ -97,13 +97,13 @@ for i in range(n_payments):
     total_draw = draw_amt + interest
     # Determine paydown based on start date
     if date_dt < paydown_start:
-        paydown = 0
+        paydown_val = 0
     else:
         if paydown_mode == "Fixed paydown amount":
-            paydown = paydowns_per_month * paydown_amount
+            paydown_val = paydowns_per_month * paydown_amount
         else:
-            paydown = custom_paydowns[i]
-    end_bal = balance + total_draw - paydown
+            paydown_val = custom_paydowns[i]
+    end_bal = balance + total_draw - paydown_val
 
     rows.append({
         "Period": period,
@@ -112,7 +112,7 @@ for i in range(n_payments):
         "Const. Draw": draw_amt,
         "Interest Draw": interest,
         "Total Draw": total_draw,
-        "Paydown": paydown,
+        "Paydown": paydown_val,
         "End Balance": end_bal,
     })
     balance = end_bal
@@ -137,9 +137,13 @@ with pd.ExcelWriter(
     ws.write_formula(1, 1, "=B1/12", money_fmt)
     ws.write(2, 0, "Term (months)")
     ws.write_number(2, 1, term_months)
+    ws.write(3, 0, "Paydowns per month")
+    ws.write_number(3, 1, paydowns_per_month if paydown_mode == "Fixed paydown amount" else 0)
+    ws.write(4, 0, "Amount per settlement")
+    ws.write_number(4, 1, paydown_amount if paydown_mode == "Fixed paydown amount" else 0)
 
     # Header row after summary
-    header_row = 4
+    header_row = 6
     headers = [
         "Period", "Date", "Beg Balance", "Const. Draw",
         "Interest Draw", "Total Draw", "Paydown", "End Balance"
@@ -147,7 +151,7 @@ with pd.ExcelWriter(
     for col, h in enumerate(headers):
         ws.write(header_row, col, h)
 
-    # Write data rows with formulas
+    # Write data rows with formulas or values
     for idx, r in enumerate(rows):
         row_idx = header_row + 1 + idx
         excel_row = row_idx + 1
@@ -160,7 +164,12 @@ with pd.ExcelWriter(
         ws.write_number(row_idx, 3, r["Const. Draw"], money_fmt)
         ws.write_formula(row_idx, 4, f"=C{excel_row}*$B$2", money_fmt)
         ws.write_formula(row_idx, 5, f"=D{excel_row}+E{excel_row}", money_fmt)
-        ws.write_number(row_idx, 6, r["Paydown"], money_fmt)
+        # Paydown: reference summary cells if fixed
+        if paydown_mode == "Fixed paydown amount":
+            ws.write_formula(line=row_idx, col=6,
+                formula=f"=$B$4*$B$5", cell_format=money_fmt)
+        else:
+            ws.write_number(row_idx, 6, r["Paydown"], money_fmt)
         ws.write_formula(row_idx, 7, f"=C{excel_row}+F{excel_row}-G{excel_row}", money_fmt)
 
     # Sum total interest below data
@@ -174,7 +183,7 @@ with pd.ExcelWriter(
 output.seek(0)
 
 # ─── Streamlit UI ────────────────────────────────────────
-st.title("🔨 Loan Amortization & Draw Schedule with Inline Formula Summary")
+st.title("🔨 Loan Amortization & Draw Schedule with Settlement Summary")
 st.download_button(
     label="📥 Download schedule as Excel (.xlsx)",
     data=output.read(),
