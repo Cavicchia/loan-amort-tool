@@ -42,10 +42,14 @@ else:
         "Draw":    default
     })
     st.sidebar.markdown("#### Enter draw for each period:")
-    df_draws = st.sidebar.experimental_data_editor(
-        df_draws, num_rows="dynamic", use_container_width=True
+    # ← call experimental_data_editor at top‑level, not on sidebar
+    df_draws = st.experimental_data_editor(
+        df_draws, 
+        num_rows="dynamic",
+        use_container_width=True
     )
     custom_draws = df_draws["Draw"].tolist()
+
     # not used, but define monthly_draw so name exists
     monthly_draw = None
 
