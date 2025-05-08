@@ -9,7 +9,7 @@ st.sidebar.header("Loan & Draw & Paydown Parameters")
 
 # Core loan inputs
 principal = st.sidebar.number_input(
-    "Loan amount", value=11_830_000, step=100_000, format="%d"
+    "Beginning Balance", value=11_830_000, step=100_000, format="%d"
 )
 annual_rate = st.sidebar.number_input(
     "Annual interest rate (%)", value=8.0, min_value=0.0, max_value=100.0, format="%.4f"
